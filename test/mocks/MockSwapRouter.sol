@@ -1,21 +1,59 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@uniswap/v3-periphery/interfaces/ISwapRouter.sol";
 
 contract MockSwapRouter is ISwapRouter {
     uint256 public amountInReturned;
+    mapping(address => uint256) public swapResults;
+    uint256 public conversionRate = 1;
+    
+    address public tokenIn;
+    address public tokenOut;
+    uint256 public amountIn;
+    uint256 public amountOut;
+
+    function setConversionRate(uint256 _rate) external {
+        conversionRate = _rate;
+    }
 
     function setAmountIn(uint256 _amountIn) external {
         amountInReturned = _amountIn;
     }
 
     function exactInputSingle(
-        ExactInputSingleParams calldata
+        ExactInputSingleParams calldata params
     ) external payable override returns (uint256) {
-        return 0;
+        // Store the token and amount data for tests
+        tokenIn = params.tokenIn;
+        tokenOut = params.tokenOut;
+        amountIn = params.amountIn;
+        
+        // Get the configured swap result for the tokenOut
+        uint256 resultAmount = swapResults[params.tokenOut];
+        
+        // If no swap result is configured, use the conversion rate
+        if (resultAmount == 0) {
+            resultAmount = params.amountIn * conversionRate;
+        }
+        
+        // Check if the amount out is less than the minimum required
+        if (resultAmount < params.amountOutMinimum) {
+            revert("Too little received");
+        }
+        
+        // Transfer the tokens to the recipient
+        if (resultAmount > 0) {
+            // Simulate the token transfer by transferring from this mock to the recipient
+            // In real scenario, this would be handled by the pool contract
+            IERC20(params.tokenOut).transfer(params.recipient, resultAmount);
+        }
+        
+        // Store the amount out for tests
+        amountOut = resultAmount;
+        
+        return resultAmount;
     }
 
     function exactInput(
@@ -60,11 +98,15 @@ contract MockSwapRouter is ISwapRouter {
         return this.multicall(data);
     }
 
+    function setSwapResult(address /* tokenOut */, uint256 /* amountOut */) external {
+        swapResults[tokenOut] = amountOut;
+    }
+
     function uniswapV3SwapCallback(
         int256 amount0Delta,
         int256 amount1Delta,
         bytes calldata data
-    ) external pure {
+    ) external pure override {
         // Not implemented for testing
     }
 
